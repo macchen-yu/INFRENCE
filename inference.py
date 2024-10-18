@@ -11,8 +11,23 @@ import seaborn as sns
 from skimage import io
 import argparse
 import torch
+
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from utils import (
+    metrics,
+    convert_to_color_,
+    convert_from_color_,
+    display_dataset,
+    display_predictions,
+    explore_spectrums,
+    plot_spectrums,
+    sample_gt,
+    build_dataset,
+    show_results,
+    compute_imf_weights,
+    get_device,
+)
 # Test options
 parser = argparse.ArgumentParser(
     description="Run deep learning experiments on" " various hyperspectral datasets"
@@ -159,32 +174,82 @@ else:
     probabilities = test(model, img, hyperparams)
     prediction = np.argmax(probabilities, axis=-1)
 
-# Create a new figure
-plt.figure(figsize=(5, 5))
+prediction = prediction[3:-3, 3:-3]
 
+# import matplotlib.pyplot as plt
+# import numpy as np
+# import os
+# import matplotlib.colors as mcolors
 
+# Load the ground truth image
+gt = np.load(os.path.join(dirname, "groundtruth", f"gt_{img_filename}"))
+
+# Calculate metrics and print them manually
+run_results = metrics(prediction, gt, n_classes=N_CLASSES)
+
+# Create a new figure for metrics visualization, confusion matrix, and prediction result
+fig, (ax3, ax1, ax2) = plt.subplots(1, 3, figsize=(18, 5))
+
+# Plotting the prediction result
 colors = [
     '#000000', '#C9655B', '#DBCF6A', '#97D869', '#88D7AD',
     '#6D98D5', '#7D58D3', '#C85EBB'
 ]
 cmap = mcolors.ListedColormap(colors)
 
-# Display the prediction array using matplotlib's imshow function with the 'plasma' colormap
-plt.imshow(prediction, cmap=cmap, interpolation='nearest', vmin=0, vmax=7)
+im2 = ax3.imshow(prediction, cmap=cmap, interpolation='nearest', vmin=0, vmax=7)
 
-# 假設你的分類名稱是存放在一個列表中
-class_names = ['background','T100', 'C100',  'C20T80', 'C80T20', 'C65T35', 'C35T65', 'C50T50']
+# Assuming class names
+class_names = ['background', 'T100', 'C100', 'C20T80', 'C80T20', 'C65T35', 'C35T65', 'C50T50']
 
-# 繪製 color bar
-cbar = plt.colorbar()
-cbar.set_ticks(np.arange(0, 8, 1))  # 設定刻度
-cbar.set_ticklabels(class_names)  # 使用分類名稱替代數字
-
+# Draw the color bar for prediction
+cbar = plt.colorbar(im2, ax=ax3, orientation='vertical', fraction=0.046, pad=0.04)
+cbar.set_ticks(np.arange(0, 8, 1))  # Setting ticks
+cbar.set_ticklabels(class_names)  # Using class names to replace numbers
 
 # Add title and axis labels
-plt.title(f'{INFERENCE}  Prediction Results')
-plt.xlabel('X-axis')
-plt.ylabel('Y-axis')
+ax3.set_title(f'{INFERENCE} Prediction Results')
+ax3.set_xlabel('X-axis')
+ax3.set_ylabel('Y-axis')
 
-# Show the plot
+# Plotting Confusion Matrix with class names
+if 'Confusion matrix' in run_results:
+    confusion_matrix = run_results['Confusion matrix']
+    im1 = ax1.imshow(confusion_matrix, interpolation='nearest', cmap='Blues')
+    ax1.set_title('Confusion Matrix')
+    ax1.set_xlabel('Predicted Label')
+    ax1.set_ylabel('True Label')
+    ax1.set_xticks(np.arange(len(class_names)))
+    ax1.set_yticks(np.arange(len(class_names)))
+    ax1.set_xticklabels(class_names, rotation=45, ha='right')
+    ax1.set_yticklabels(class_names)
+
+    # Add text annotations in each cell of the confusion matrix
+    for i in range(len(confusion_matrix)):
+        for j in range(len(confusion_matrix[i])):
+            ax1.text(j, i, f'{confusion_matrix[i][j]}', ha='center', va='center', color='black')
+
+    # Draw the color bar for the confusion matrix
+    plt.colorbar(im1, ax=ax1, orientation='vertical', fraction=0.046, pad=0.04)
+
+# Manually output each item from the metrics dictionary
+text_metrics = ""
+for key, value in run_results.items():
+    if key == 'Confusion matrix':
+        continue
+    elif isinstance(value, list):
+        formatted_values = [f"{item:.4f}" if isinstance(item, (int, float)) else str(item) for item in value]
+        text_metrics += f"{key}: [{', '.join(formatted_values)}]\n"
+    else:
+        text_metrics += f"{key}: {value:.4f}\n" if isinstance(value, (int, float)) else f"{key}: {value}\n"
+
+# Displaying the metrics in a text box in the same figure
+props = dict(boxstyle='round,pad=1.5', facecolor='wheat', alpha=0.5)
+ax2.text(0.5, 0.5, text_metrics, transform=ax2.transAxes, fontsize=12,
+          verticalalignment='center', horizontalalignment='center', bbox=props)
+ax2.axis('off')
+ax2.set_title('Run Metrics')
+
+# Show the combined plot
+plt.tight_layout()
 plt.show()
